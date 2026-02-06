@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ i18n.title }} - {{ current_path or i18n.root_dir }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 20px 30px;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+        }
+
+        .lang-switch {
+            display: flex;
+            gap: 4px;
+            font-size: 13px;
+        }
+
+        .lang-switch a {
+            color: rgba(255,255,255,0.5);
+            text-decoration: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .lang-switch a:hover {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .lang-switch a.active {
+            color: white;
+            background: rgba(255,255,255,0.2);
+        }
+
+        .breadcrumb {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            font-size: 14px;
+        }
+
+        .breadcrumb a {
+            color: #ecf0f1;
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb span {
+            color: #bdc3c7;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 15px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #219a52;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .upload-area {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        .upload-label {
+            display: block;
+            padding: 15px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .upload-label:hover {
+            border-color: #3498db;
+            background: #f0f7ff;
+        }
+
+        .upload-label.dragover {
+            border-color: #27ae60;
+            background: #f0fff4;
+        }
+
+        .file-list {
+            padding: 0;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 30px;
+            border-bottom: 1px solid #f1f3f4;
+            transition: background 0.2s;
+        }
+
+        .file-item:hover {
+            background: #f8f9fa;
+        }
+
+        .file-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            width: 30px;
+            text-align: center;
+        }
+
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-weight: 500;
+            color: #2c3e50;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        .file-name:hover {
+            color: #3498db;
+        }
+
+        .file-meta {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 3px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .file-actions .btn {
+            padding: 5px 12px;
+            font-size: 12px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+
+        .empty-state .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .flash-messages {
+            padding: 0 30px;
+        }
+
+        .flash {
+            padding: 12px 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .flash-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .flash-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 20px;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #e9ecef;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .progress-bar .progress {
+            height: 100%;
+            background: #3498db;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #95a5a6;
+            font-size: 13px;
+            border-top: 1px solid #f1f3f4;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .toolbar {
+                padding: 10px 15px;
+            }
+
+            .file-item {
+                padding: 10px 15px;
+            }
+
+            .file-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-top">
+                <h1>📂 {{ i18n.title }}</h1>
+                <div class="lang-switch">
+                    <a href="javascript:void(0)" onclick="switchLang('en')" {% if lang == 'en' %}class="active"{% endif %}>EN</a>
+                    <span style="color: rgba(255,255,255,0.3)">|</span>
+                    <a href="javascript:void(0)" onclick="switchLang('zh')" {% if lang == 'zh' %}class="active"{% endif %}>中文</a>
+                </div>
+            </div>
+            <div class="breadcrumb">
+                {% for name, path in breadcrumbs %}
+                    {% if loop.last %}
+                        <span>{{ name }}</span>
+                    {% else %}
+                        <a href="{{ url_for('browse', path=path) }}">{{ name }}</a>
+                        <span>/</span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="toolbar">
+            <button class="btn btn-primary" onclick="showNewFolderModal()">📁 {{ i18n.new_folder_btn }}</button>
+
+            <form id="uploadForm" action="{{ url_for('upload', path=current_path) }}" method="post" enctype="multipart/form-data" class="upload-area">
+                <label class="upload-label" id="uploadLabel">
+                    <input type="file" name="files" id="fileInput" multiple onchange="uploadFiles()">
+                    📤 {{ i18n.upload_hint }}
+                </label>
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress" id="progress"></div>
+                </div>
+            </form>
+        </div>
+
+        <div class="file-list">
+            {% if parent_path is not none %}
+                <div class="file-item">
+                    <span class="file-icon">📁</span>
+                    <div class="file-info">
+                        <a href="{{ url_for('browse', path=parent_path) }}" class="file-name">..</a>
+                        <div class="file-meta">{{ i18n.parent_dir }}</div>
+                    </div>
+                </div>
+            {% endif %}
+
+            {% for item in items %}
+                <div class="file-item">
+                    <span class="file-icon">{{ item.icon }}</span>
+                    <div class="file-info">
+                        {% if item.is_dir %}
+                            <a href="{{ url_for('browse', path=item.path) }}" class="file-name">{{ item.name }}</a>
+                        {% else %}
+                            <a href="{{ url_for('download', path=item.path) }}" class="file-name">{{ item.name }}</a>
+                        {% endif %}
+                        <div class="file-meta">
+                            {% if not item.is_dir %}{{ item.size }} · {% endif %}
+                            {{ item.modified }}
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        {% if not item.is_dir %}
+                            <a href="{{ url_for('download', path=item.path) }}" class="btn btn-primary">{{ i18n.download }}</a>
+                        {% endif %}
+                        <button class="btn btn-danger" onclick="confirmDelete('{{ item.name }}', '{{ item.path }}', {{ 'true' if item.is_dir else 'false' }})">{{ i18n.delete }}</button>
+                    </div>
+                </div>
+            {% else %}
+                {% if parent_path is none %}
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <p>{{ i18n.empty_state }}</p>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="footer">
+            Powered by drayl & Claude Code
+        </div>
+    </div>
+
+    <!-- 新建文件夹弹窗 -->
+    <div class="modal" id="newFolderModal">
+        <div class="modal-content">
+            <h3>📁 {{ i18n.new_folder_title }}</h3>
+            <form action="{{ url_for('new_folder', path=current_path) }}" method="post">
+                <input type="text" name="folder_name" placeholder="{{ i18n.folder_name_placeholder }}" required autofocus>
+                <div class="modal-actions">
+                    <button type="button" class="btn" onclick="hideModal('newFolderModal')">{{ i18n.cancel }}</button>
+                    <button type="submit" class="btn btn-success">{{ i18n.create }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 删除确认弹窗 -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-content">
+            <h3>⚠️ {{ i18n.confirm_delete_title }}</h3>
+            <p id="deleteMessage"></p>
+            <form id="deleteForm" method="post">
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button type="button" class="btn" onclick="hideModal('deleteModal')">{{ i18n.cancel }}</button>
+                    <button type="submit" class="btn btn-danger">{{ i18n.delete }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // i18n
+        const i18n = {{ i18n | tojson }};
+
+        function switchLang(lang) {
+            document.cookie = 'lang=' + lang + ';path=/;max-age=31536000';
+            location.reload();
+        }
+
+        // 拖拽上传
+        const uploadLabel = document.getElementById('uploadLabel');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadLabel.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadLabel.addEventListener(eventName, () => uploadLabel.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadLabel.addEventListener(eventName, () => uploadLabel.classList.remove('dragover'), false);
+        });
+
+        uploadLabel.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            document.getElementById('fileInput').files = files;
+            uploadFiles();
+        }
+
+        // 上传文件
+        function uploadFiles() {
+            const form = document.getElementById('uploadForm');
+            const formData = new FormData(form);
+            const progressBar = document.getElementById('progressBar');
+            const progress = document.getElementById('progress');
+
+            progressBar.style.display = 'block';
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', form.action, true);
+
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    progress.style.width = percentComplete + '%';
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    location.reload();
+                } else {
+                    alert(i18n.upload_failed + xhr.responseText);
+                    progressBar.style.display = 'none';
+                }
+            };
+
+            xhr.onerror = function() {
+                alert(i18n.upload_error);
+                progressBar.style.display = 'none';
+            };
+
+            xhr.send(formData);
+        }
+
+        // 弹窗控制
+        function showNewFolderModal() {
+            document.getElementById('newFolderModal').classList.add('active');
+        }
+
+        function hideModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function confirmDelete(name, path, isDir) {
+            const template = isDir ? i18n.confirm_delete_folder : i18n.confirm_delete_file;
+            document.getElementById('deleteMessage').textContent = template.replace('{name}', name);
+            document.getElementById('deleteForm').action = '/delete/' + encodeURIComponent(path);
+            document.getElementById('deleteModal').classList.add('active');
+        }
+
+        // 点击弹窗外部关闭
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.remove('active');
+                }
+            });
+        });
+
+        // ESC关闭弹窗
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal').forEach(modal => {
+                    modal.classList.remove('active');
+                });
+            }
+        });
+    </script>
+</body>
+</html>

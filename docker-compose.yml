@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  file-browser:
+    build: .
+    container_name: file-browser
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      # 使用命名卷存储文件
+      - file-browser-data:/data
+      # 挂载源码，修改后重启容器即可生效（无需重新build）
+      - ./src:/app:ro
+    environment:
+      # 文件存储路径（容器内路径）
+      - FILE_STORAGE_PATH=/data
+      # 服务监听地址
+      - HOST=0.0.0.0
+      # 服务端口
+      - PORT=9100
+      # 最大上传大小（字节），默认100MB
+      - MAX_UPLOAD_SIZE=104857600
+      # 允许的文件扩展名（逗号分隔，留空表示允许所有）
+      # - ALLOWED_EXTENSIONS=.txt,.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.zip
+      # Flask密钥（生产环境请修改）
+      - SECRET_KEY=your-secret-key-change-in-production
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  file-browser-data:
+    name: file-browser-data
