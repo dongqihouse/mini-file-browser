@@ -20,7 +20,7 @@ A lightweight file browser for internal networks, built with Python3 + Flask. Su
 ### Docker Compose (Recommended)
 
 ```bash
-git clone https://github.com/drayl/mini-file-browser.git
+git clone https://github.com/dongqihouse/mini-file-browser.git
 cd mini-file-browser
 docker-compose up -d
 ```
