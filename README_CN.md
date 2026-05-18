@@ -12,7 +12,7 @@
 - **目录管理** - 创建文件夹、删除文件与文件夹
 - **安全防护** - 路径遍历防护、扩展名限制、非 root 运行
 - **响应式界面** - 适配桌面和移动端
-- **REST API** - 文件列表 JSON 接口
+- **REST API** - 文件列表 JSON 接口、multipart 文件上传接口
 - **Docker 部署** - 开箱即用，支持 Docker Compose
 
 ## 快速开始
@@ -54,6 +54,8 @@ python src/app.py
 ```
 GET /api/files              # 获取根目录文件列表
 GET /api/files/<path>       # 获取指定目录文件列表
+POST /api/upload            # 上传文件到根目录
+POST /api/upload/<path>     # 上传文件到指定目录
 ```
 
 响应示例：
@@ -68,6 +70,30 @@ GET /api/files/<path>       # 获取指定目录文件列表
       "modified": 1700000000.0
     }
   ]
+}
+```
+
+上传使用 `multipart/form-data`，文件字段名可使用 `files` 或 `file`。目标目录必须已存在，重名文件会覆盖。
+
+```bash
+curl -F "files=@example.txt" http://localhost:9100/api/upload
+curl -F "files=@a.txt" -F "files=@b.jpg" http://localhost:9100/api/upload/docs
+```
+
+上传成功响应示例：
+
+```json
+{
+  "count": 1,
+  "uploaded": [
+    {
+      "name": "example.txt",
+      "path": "example.txt",
+      "size": 1024,
+      "overwritten": false
+    }
+  ],
+  "errors": []
 }
 ```
 

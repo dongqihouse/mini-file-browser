@@ -12,7 +12,7 @@ A lightweight file browser for internal networks, built with Python3 + Flask. Su
 - **Directory Management** - Create folders, delete files/folders
 - **Security** - Path traversal protection, extension restriction, non-root user
 - **Responsive UI** - Desktop and mobile friendly
-- **REST API** - JSON file listing endpoint
+- **REST API** - JSON file listing endpoint and multipart file upload endpoint
 - **Docker Ready** - Out-of-the-box with Docker Compose
 
 ## Quick Start
@@ -54,6 +54,8 @@ Configure via environment variables:
 ```
 GET /api/files              # List files in root directory
 GET /api/files/<path>       # List files in specified directory
+POST /api/upload            # Upload files to root directory
+POST /api/upload/<path>     # Upload files to specified directory
 ```
 
 Response example:
@@ -68,6 +70,31 @@ Response example:
       "modified": 1700000000.0
     }
   ]
+}
+```
+
+Upload requests use `multipart/form-data`. The file field name can be `files` or `file`.
+The target directory must already exist, and existing files with the same name are overwritten.
+
+```bash
+curl -F "files=@example.txt" http://localhost:9100/api/upload
+curl -F "files=@a.txt" -F "files=@b.jpg" http://localhost:9100/api/upload/docs
+```
+
+Successful upload response example:
+
+```json
+{
+  "count": 1,
+  "uploaded": [
+    {
+      "name": "example.txt",
+      "path": "example.txt",
+      "size": 1024,
+      "overwritten": false
+    }
+  ],
+  "errors": []
 }
 ```
 
