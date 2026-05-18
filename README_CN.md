@@ -44,7 +44,7 @@ python src/app.py
 | `FILE_STORAGE_PATH` | 文件存储路径 | `/data` |
 | `PORT` | 服务端口 | `9100` |
 | `HOST` | 监听地址 | `0.0.0.0` |
-| `MAX_UPLOAD_SIZE` | 最大上传大小（字节） | `104857600` (100MB) |
+| `MAX_UPLOAD_SIZE` | 最大上传大小（字节） | `524288000` (500MB) |
 | `ALLOWED_EXTENSIONS` | 允许的扩展名（逗号分隔，留空允许全部） | 空 |
 | `SECRET_KEY` | Flask 密钥（生产环境请修改） | 内置默认值 |
 | `DEBUG` | 调试模式 | `false` |

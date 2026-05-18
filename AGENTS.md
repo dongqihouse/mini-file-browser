@@ -38,5 +38,5 @@ python src/app.py
 
 - `FILE_STORAGE_PATH`: 文件存储路径，默认 `/data`
 - `PORT`: 端口，默认 `9100`
-- `MAX_UPLOAD_SIZE`: 最大上传大小，默认 100MB
+- `MAX_UPLOAD_SIZE`: 最大上传大小，默认 500MB
 - `ALLOWED_EXTENSIONS`: 允许的扩展名（逗号分隔），空为全部允许

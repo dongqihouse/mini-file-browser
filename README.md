@@ -44,7 +44,7 @@ Configure via environment variables:
 | `FILE_STORAGE_PATH` | File storage path | `/data` |
 | `PORT` | Service port | `9100` |
 | `HOST` | Listen address | `0.0.0.0` |
-| `MAX_UPLOAD_SIZE` | Max upload size in bytes | `104857600` (100MB) |
+| `MAX_UPLOAD_SIZE` | Max upload size in bytes | `524288000` (500MB) |
 | `ALLOWED_EXTENSIONS` | Allowed extensions (comma-separated, empty for all) | empty |
 | `SECRET_KEY` | Flask secret key (change in production) | built-in default |
 | `DEBUG` | Debug mode | `false` |

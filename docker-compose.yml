@@ -19,8 +19,8 @@ services:
       - HOST=0.0.0.0
       # 服务端口
       - PORT=9100
-      # 最大上传大小（字节），默认100MB
-      - MAX_UPLOAD_SIZE=104857600
+      # 最大上传大小（字节），默认500MB
+      - MAX_UPLOAD_SIZE=524288000
       # 允许的文件扩展名（逗号分隔，留空表示允许所有）
       # - ALLOWED_EXTENSIONS=.txt,.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.zip
       # Flask密钥（生产环境请修改）

@@ -26,7 +26,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'file-browser-secret-key-change-me
 _in_docker = Path('/.dockerenv').exists()
 _default_storage = '/data' if _in_docker else str(Path(__file__).resolve().parent.parent / 'data')
 BASE_DIR = Path(os.environ.get('FILE_STORAGE_PATH', _default_storage)).resolve()
-MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 100 * 1024 * 1024))  # 默认100MB
+MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 500 * 1024 * 1024))  # 默认500MB
 ALLOWED_EXTENSIONS = os.environ.get('ALLOWED_EXTENSIONS', '')  # 空表示允许所有
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE
 
