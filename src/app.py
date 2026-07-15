@@ -4,8 +4,11 @@ Simple File Browser - 内网文件上传下载服务
 基于Python3标准库 + Flask
 """
 
+import errno
 import os
+import secrets
 import shutil
+import stat
 from datetime import datetime
 from pathlib import Path
 
@@ -17,15 +20,16 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from i18n import TRANSLATIONS, get_lang, t
-from utils import get_file_size_str, get_file_icon
+from preview_config import get_preview_settings, get_storage_dir
+from utils import get_file_size_str, get_file_icon, is_inline_preview_file, is_previewable_file
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'file-browser-secret-key-change-me')
 
 # 配置
-_in_docker = Path('/.dockerenv').exists()
-_default_storage = '/data' if _in_docker else str(Path(__file__).resolve().parent.parent / 'data')
-BASE_DIR = Path(os.environ.get('FILE_STORAGE_PATH', _default_storage)).resolve()
+BASE_DIR = get_storage_dir()
+PREVIEW_SETTINGS = get_preview_settings()
+PREVIEW_BASE_URL = PREVIEW_SETTINGS.preview_base_url
 MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 500 * 1024 * 1024))  # 默认500MB
 ALLOWED_EXTENSIONS = os.environ.get('ALLOWED_EXTENSIONS', '')  # 空表示允许所有
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE
@@ -55,6 +59,26 @@ def safe_path(path_str):
     return full_path
 
 
+def get_upload_target_dir(path_str):
+    """解析上传目标目录；无效路径不会回退到存储根目录。"""
+    if not path_str:
+        return BASE_DIR
+
+    clean_path = Path(path_str).as_posix().lstrip('/')
+    target_dir = (BASE_DIR / clean_path).resolve()
+    try:
+        target_dir.relative_to(BASE_DIR)
+    except ValueError:
+        return None
+
+    return target_dir
+
+
+def get_preview_url(path):
+    """构造固定隔离源上的预览地址，不使用请求 Host。"""
+    return f"{PREVIEW_BASE_URL}{url_for('preview', path=path)}"
+
+
 def get_breadcrumbs(rel_path):
     """生成面包屑导航"""
     if not rel_path or rel_path == '.':
@@ -79,17 +103,29 @@ def get_request_files():
     return files
 
 
-def clean_upload_filename(raw_filename):
-    """清理上传文件名，避免客户端传入路径片段"""
-    filename = secure_filename(raw_filename)
-    if filename:
-        return filename
+def get_upload_entries():
+    """解析平铺或文件夹上传请求，返回文件与相对路径的配对。"""
+    relative_paths = request.form.getlist('relative_paths')
+    if not relative_paths:
+        return [(file, None) for file in get_request_files()], None
 
-    basename = Path(raw_filename.replace('\\', '/')).name.strip()
-    if basename in ('', '.', '..'):
+    files = request.files.getlist('files')
+    if any(key != 'files' for key in request.files) or len(files) != len(relative_paths):
+        return [], {
+            'code': 'invalid_folder_upload',
+            'message': 'Folder upload files and paths do not match'
+        }
+
+    return list(zip(files, relative_paths)), None
+
+
+def clean_upload_filename(raw_filename):
+    """提取安全的上传文件名，并保留 Unicode 名称。"""
+    filename = Path(raw_filename.replace('\\', '/')).name.strip()
+    if '\x00' in filename or filename in ('', '.', '..'):
         return ''
 
-    return basename
+    return filename
 
 
 def is_extension_allowed(filename):
@@ -108,68 +144,194 @@ def is_extension_allowed(filename):
     return True, ext
 
 
-def save_uploaded_files(files, target_dir):
-    """保存上传文件，返回成功列表和错误列表"""
+def clean_upload_path_parts(relative_path):
+    """验证文件夹上传的相对路径，并安全地清理每个组件。"""
+    if (
+        not relative_path
+        or '\x00' in relative_path
+        or '\\' in relative_path
+        or relative_path.startswith('/')
+    ):
+        return None
+
+    raw_parts = relative_path.split('/')
+    if any(not part or part in ('.', '..') for part in raw_parts):
+        return None
+
+    path_parts = []
+    for part in raw_parts:
+        if len(part) >= 2 and part[0].isalpha() and part[1] == ':':
+            return None
+
+        # 文件夹上传的路径来自 webkitRelativePath；保留已验证的 Unicode 名称。
+        path_parts.append(part)
+
+    return path_parts
+
+
+def save_file_to_destination(file, target_dir, path_parts):
+    """使用目录文件描述符和原子替换保存文件，避免跟随符号链接。"""
+    base_dir = BASE_DIR.resolve()
+    target_dir = target_dir.resolve()
+    try:
+        target_parts = target_dir.relative_to(base_dir).parts
+    except ValueError:
+        return None, False, 0, 'invalid_path', 'Invalid upload path'
+
+    if not hasattr(os, 'O_DIRECTORY') or not hasattr(os, 'O_NOFOLLOW'):
+        return None, False, 0, 'save_failed', 'Secure folder uploads are not supported on this platform'
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    parent_fd = None
+    temp_dir_fd = None
+    temp_dir_name = None
+    temp_file_name = 'upload'
+
+    try:
+        parent_fd = os.open(base_dir, directory_flags)
+
+        for part in target_parts:
+            child_fd = os.open(part, directory_flags, dir_fd=parent_fd)
+            previous_fd = parent_fd
+            parent_fd = child_fd
+            os.close(previous_fd)
+
+        for part in path_parts[:-1]:
+            try:
+                os.mkdir(part, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+
+            child_fd = os.open(part, directory_flags, dir_fd=parent_fd)
+            previous_fd = parent_fd
+            parent_fd = child_fd
+            os.close(previous_fd)
+
+        filename = path_parts[-1]
+        try:
+            existing = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            overwritten = False
+        else:
+            if not stat.S_ISREG(existing.st_mode):
+                return None, False, 0, 'invalid_path', 'Invalid upload path'
+            overwritten = True
+
+        for _ in range(10):
+            candidate_dir_name = f'.upload-{secrets.token_hex(16)}'
+            try:
+                os.mkdir(candidate_dir_name, 0o700, dir_fd=parent_fd)
+            except FileExistsError:
+                continue
+
+            temp_dir_name = candidate_dir_name
+            temp_dir_fd = os.open(temp_dir_name, directory_flags, dir_fd=parent_fd)
+            break
+        else:
+            return None, False, 0, 'save_failed', 'Failed to create upload directory'
+
+        file_fd = os.open(temp_file_name, file_flags, 0o666, dir_fd=temp_dir_fd)
+        with os.fdopen(file_fd, 'wb') as destination:
+            file.save(destination)
+            size = os.fstat(destination.fileno()).st_size
+
+        os.replace(
+            temp_file_name,
+            filename,
+            src_dir_fd=temp_dir_fd,
+            dst_dir_fd=parent_fd
+        )
+
+        return target_dir.joinpath(*path_parts), overwritten, size, None, None
+    except OSError as error:
+        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+            return None, False, 0, 'invalid_path', 'Invalid upload path'
+        return None, False, 0, 'save_failed', 'Failed to save file'
+    except Exception:
+        return None, False, 0, 'save_failed', 'Failed to save file'
+    finally:
+        if temp_dir_fd is not None:
+            try:
+                os.unlink(temp_file_name, dir_fd=temp_dir_fd)
+            except OSError:
+                pass
+            os.close(temp_dir_fd)
+        if temp_dir_name is not None and parent_fd is not None:
+            try:
+                os.rmdir(temp_dir_name, dir_fd=parent_fd)
+            except OSError:
+                pass
+        if parent_fd is not None:
+            os.close(parent_fd)
+
+
+def save_uploaded_files(entries, target_dir):
+    """保存上传条目，返回成功列表和错误列表。"""
     uploaded = []
     errors = []
-    target_dir = target_dir.resolve()
 
-    for file in files:
+    for file, relative_path in entries:
         raw_filename = file.filename or ''
-        if not raw_filename:
-            errors.append({
-                'filename': raw_filename,
-                'code': 'empty_filename',
-                'message': 'No filename provided'
-            })
-            continue
+        display_filename = relative_path if relative_path is not None else raw_filename
 
-        filename = clean_upload_filename(raw_filename)
-        if not filename:
-            errors.append({
-                'filename': raw_filename,
-                'code': 'invalid_filename',
-                'message': 'Invalid filename'
-            })
-            continue
+        if relative_path is None:
+            if not raw_filename:
+                errors.append({
+                    'filename': raw_filename,
+                    'code': 'empty_filename',
+                    'message': 'No filename provided'
+                })
+                continue
+
+            filename = clean_upload_filename(raw_filename)
+            if not filename:
+                errors.append({
+                    'filename': raw_filename,
+                    'code': 'invalid_filename',
+                    'message': 'Invalid filename'
+                })
+                continue
+
+            path_parts = [filename]
+        else:
+            path_parts = clean_upload_path_parts(relative_path)
+            if not path_parts:
+                errors.append({
+                    'filename': display_filename,
+                    'code': 'invalid_path',
+                    'message': 'Invalid upload path'
+                })
+                continue
+            filename = path_parts[-1]
 
         allowed, ext = is_extension_allowed(filename)
         if not allowed:
             errors.append({
-                'filename': filename,
+                'filename': display_filename,
                 'code': 'extension_not_allowed',
                 'message': f'File type {ext} is not allowed',
                 'extension': ext
             })
             continue
 
-        file_path = (target_dir / filename).resolve()
-        try:
-            file_path.relative_to(target_dir)
-            file_path.relative_to(BASE_DIR)
-        except ValueError:
+        file_path, overwritten, size, error_code, error_message = save_file_to_destination(
+            file, target_dir, path_parts
+        )
+        if error_code:
             errors.append({
-                'filename': filename,
-                'code': 'invalid_path',
-                'message': 'Invalid upload path'
+                'filename': display_filename,
+                'code': error_code,
+                'message': error_message
             })
             continue
 
-        try:
-            overwritten = file_path.exists()
-            file.save(file_path)
-            uploaded.append({
-                'name': filename,
-                'path': file_path.relative_to(BASE_DIR).as_posix(),
-                'size': file_path.stat().st_size,
-                'overwritten': overwritten
-            })
-        except Exception as e:
-            errors.append({
-                'filename': filename,
-                'code': 'save_failed',
-                'message': str(e)
-            })
+        uploaded.append({
+            'name': filename,
+            'path': file_path.relative_to(BASE_DIR).as_posix(),
+            'size': size,
+            'overwritten': overwritten
+        })
 
     return uploaded, errors
 
@@ -225,6 +387,8 @@ def browse(path=''):
                 'name': entry.name,
                 'path': item_rel_path,
                 'is_dir': entry.is_dir(),
+                'is_previewable': not entry.is_dir() and is_previewable_file(entry.name),
+                'preview_url': get_preview_url(item_rel_path) if not entry.is_dir() and is_previewable_file(entry.name) else '',
                 'size': get_file_size_str(stat.st_size) if not entry.is_dir() else '',
                 'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M'),
                 'icon': get_file_icon(entry.name, entry.is_dir())
@@ -261,28 +425,45 @@ def download(path):
     )
 
 
+@app.route('/preview/<path:path>')
+def preview(path):
+    """将旧的同源预览链接迁移到固定的隔离预览源。"""
+    file_path = safe_path(path)
+
+    if not file_path.exists() or file_path.is_dir() or not is_inline_preview_file(file_path.name):
+        abort(404)
+
+    return redirect(get_preview_url(path))
+
+
 @app.route('/upload/', methods=['POST'])
 @app.route('/upload/<path:path>', methods=['POST'])
 def upload(path=''):
     """上传文件"""
-    target_dir = safe_path(path)
+    target_dir = get_upload_target_dir(path)
 
-    if not target_dir.exists() or not target_dir.is_dir():
+    if target_dir is None or not target_dir.exists() or not target_dir.is_dir():
         flash(t('flash_target_dir_not_exist'), 'error')
         return redirect(url_for('browse', path=path))
 
-    files = get_request_files()
-    if not files:
+    entries, request_error = get_upload_entries()
+    if request_error:
+        flash(t('flash_folder_upload_metadata_invalid'), 'error')
+        return redirect(url_for('browse', path=path))
+
+    if not entries:
         flash(t('flash_no_file_selected'), 'error')
         return redirect(url_for('browse', path=path))
 
-    uploaded, errors = save_uploaded_files(files, target_dir)
+    uploaded, errors = save_uploaded_files(entries, target_dir)
 
     for error in errors:
         if error['code'] == 'extension_not_allowed':
             flash(t('flash_ext_not_allowed', ext=error['extension']), 'error')
         elif error['code'] in ('empty_filename', 'invalid_filename'):
             flash(t('flash_no_file_selected'), 'error')
+        elif error['code'] == 'invalid_path':
+            flash(t('flash_invalid_upload_path', name=error.get('filename', '')), 'error')
         else:
             flash(t('flash_upload_file_failed', name=error.get('filename', ''), error=error['message']), 'error')
 
@@ -364,24 +545,32 @@ def delete(path):
 @app.route('/api/upload/<path:path>', methods=['POST'])
 def api_upload(path=''):
     """API: 上传文件"""
-    target_dir = safe_path(path)
+    target_dir = get_upload_target_dir(path)
 
-    if not target_dir.exists() or not target_dir.is_dir():
+    if target_dir is None or not target_dir.exists() or not target_dir.is_dir():
         return jsonify({
             'error': 'Target directory does not exist',
             'uploaded': [],
             'errors': []
         }), 404
 
-    files = get_request_files()
-    if not files:
+    entries, request_error = get_upload_entries()
+    if request_error:
+        return jsonify({
+            'error': request_error['message'],
+            'code': request_error['code'],
+            'uploaded': [],
+            'errors': [request_error]
+        }), 400
+
+    if not entries:
         return jsonify({
             'error': 'No file selected',
             'uploaded': [],
             'errors': []
         }), 400
 
-    uploaded, errors = save_uploaded_files(files, target_dir)
+    uploaded, errors = save_uploaded_files(entries, target_dir)
     status_code = 201 if uploaded else 400
 
     response = {
@@ -410,6 +599,7 @@ def api_files(path=''):
         items.append({
             'name': entry.name,
             'is_dir': entry.is_dir(),
+            'is_previewable': not entry.is_dir() and is_previewable_file(entry.name),
             'size': stat.st_size if not entry.is_dir() else 0,
             'modified': stat.st_mtime
         })
@@ -418,12 +608,16 @@ def api_files(path=''):
 
 
 if __name__ == '__main__':
+    from wsgi import application
+    from werkzeug.serving import run_simple
+
     host = os.environ.get('HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', 9100))
     debug = os.environ.get('DEBUG', 'false').lower() == 'true'
 
-    print(f"📂 File Browser 启动中...")
-    print(f"🌐 访问地址: http://{host}:{port}")
+    print("📂 File Browser 启动中...")
+    print(f"🌐 主应用: {PREVIEW_SETTINGS.app_base_url}")
+    print(f"🪟 隔离预览: {PREVIEW_BASE_URL}")
     print(f"📁 存储目录: {BASE_DIR}")
 
-    app.run(host=host, port=port, debug=debug)
+    run_simple(host, port, application, use_debugger=debug, use_reloader=debug)

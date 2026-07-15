@@ -7,8 +7,8 @@ A lightweight file browser for internal networks, built with Python3 + Flask. Su
 ## Features
 
 - **File Browsing** - Directory navigation, breadcrumb path, file type icons
-- **File Upload** - Multi-file upload, drag & drop, progress bar
-- **File Download** - Click to download
+- **File Upload** - Multi-file and folder uploads, drag & drop, progress bar
+- **File Preview/Download** - Preview interactive HTML and text files, download other files
 - **Directory Management** - Create folders, delete files/folders
 - **Security** - Path traversal protection, extension restriction, non-root user
 - **Responsive UI** - Desktop and mobile friendly
@@ -25,14 +25,14 @@ cd mini-file-browser
 docker-compose up -d
 ```
 
-Visit http://localhost:9100
+Visit http://127.0.0.1:9100
 
 ### Local Development
 
 ```bash
 pip install -r requirements.txt
 export FILE_STORAGE_PATH=./data
-python src/app.py
+python src/wsgi.py
 ```
 
 ## Configuration
@@ -48,6 +48,19 @@ Configure via environment variables:
 | `ALLOWED_EXTENSIONS` | Allowed extensions (comma-separated, empty for all) | empty |
 | `SECRET_KEY` | Flask secret key (change in production) | built-in default |
 | `DEBUG` | Debug mode | `false` |
+| `APP_BASE_URL` | File-browser origin allowed to embed previews | `http://127.0.0.1:9100` |
+| `PREVIEW_BASE_URL` | Isolated interactive-preview origin | `http://preview.localhost:9100` |
+| `PREVIEW_HOST` | Hostname that routes to the preview-only app | Hostname from `PREVIEW_BASE_URL` |
+
+## Interactive HTML previews
+
+Interactive previews run from a **separate preview origin**. This lets inline and relative JavaScript, CSS, images, fonts, media, and same-preview iframe pages run without making uploaded code same-origin with the file-browser UI or management API.
+
+For the default local configuration, open the browser at `http://127.0.0.1:9100`. Clicking an HTML file opens it in a sandboxed panel from `http://preview.localhost:9100`; `*.localhost` resolves to the local machine in modern browsers. Do not use the preview hostname as the main application URL.
+
+Preview content is intentionally restricted: it cannot access the file-browser API, make fetch/XHR/WebSocket connections, submit forms, open popups, navigate the top-level browser page, load third-party resources, or access the parent UI. Relative resources such as `./app.js`, `./styles.css`, `images/logo.png`, and `./child.html` remain supported when their extensions are allowed by the preview route.
+
+For production, configure two different HTTPS hostnames (for example `files.example.internal` and `preview.example-preview.internal`) to forward to this service while preserving the `Host` header. Set `APP_BASE_URL`, `PREVIEW_BASE_URL`, and `PREVIEW_HOST` accordingly. Do not configure application cookies with a shared parent-domain `Domain=` attribute, and do not route the preview host to the main application as a proxy fallback.
 
 ## API
 
@@ -66,6 +79,7 @@ Response example:
     {
       "name": "example.txt",
       "is_dir": false,
+      "is_previewable": true,
       "size": 1024,
       "modified": 1700000000.0
     }
@@ -73,12 +87,22 @@ Response example:
 }
 ```
 
-Upload requests use `multipart/form-data`. The file field name can be `files` or `file`.
+Flat upload requests use `multipart/form-data`; the file field name can be `files` or `file`.
 The target directory must already exist, and existing files with the same name are overwritten.
+
+The web UI supports selecting a folder in modern browsers that implement `webkitdirectory` (Chromium-based browsers and Safari). Folder files retain their nested paths, including the selected root folder. Ordinary multi-file selection and file drag & drop remain available; directory drag & drop is not supported yet. Empty directories cannot be uploaded because browsers only provide file entries.
+
+For API folder uploads, use the `files` field and send one `relative_paths` field for every file in the same order. Paths must use `/` separators, are validated to prevent traversal, and missing nested parent directories are created automatically.
 
 ```bash
 curl -F "files=@example.txt" http://localhost:9100/api/upload
 curl -F "files=@a.txt" -F "files=@b.jpg" http://localhost:9100/api/upload/docs
+curl \
+  -F "files=@Project/docs/readme.txt" \
+  -F "relative_paths=Project/docs/readme.txt" \
+  -F "files=@Project/src/app.py" \
+  -F "relative_paths=Project/src/app.py" \
+  http://localhost:9100/api/upload
 ```
 
 Successful upload response example:

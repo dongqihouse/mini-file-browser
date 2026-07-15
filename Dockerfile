@@ -32,4 +32,4 @@ RUN useradd -m -u 1000 appuser && \
 USER appuser
 
 # 使用gunicorn运行
-CMD ["gunicorn", "--bind", "0.0.0.0:9100", "--workers", "4", "--threads", "2", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:9100", "--workers", "4", "--threads", "2", "wsgi:application"]
