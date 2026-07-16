@@ -157,10 +157,6 @@
             background: white;
         }
 
-        .upload-label + .upload-label {
-            margin-top: 10px;
-        }
-
         .upload-label:hover {
             border-color: #3498db;
             background: #f0f7ff;
@@ -285,49 +281,6 @@
             max-width: 400px;
         }
 
-        .preview-modal {
-            padding: 20px;
-        }
-
-        .preview-modal .modal-content {
-            width: min(1200px, 100%);
-            max-width: none;
-            height: min(860px, 100%);
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .preview-header {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .preview-header h3 {
-            margin: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .preview-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .preview-frame {
-            flex: 1;
-            width: 100%;
-            min-height: 0;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            background: white;
-        }
-
         .modal-content h3 {
             margin-bottom: 20px;
         }
@@ -432,10 +385,6 @@
                     <input type="file" name="files" id="fileInput" multiple onchange="uploadFiles(this)">
                     📤 {{ i18n.upload_hint }}
                 </label>
-                <label class="upload-label">
-                    <input type="file" name="files" id="folderInput" multiple webkitdirectory directory onchange="uploadFolder(this)">
-                    📁 {{ i18n.upload_folder_hint }}
-                </label>
                 <div class="progress-bar" id="progressBar">
                     <div class="progress" id="progress"></div>
                 </div>
@@ -460,8 +409,7 @@
                         {% if item.is_dir %}
                             <a href="{{ url_for('browse', path=item.path) }}" class="file-name">{{ item.name }}</a>
                         {% elif item.is_previewable %}
-                            <a href="{{ item.preview_url }}" class="file-name" target="_blank" rel="noopener noreferrer"
-                               onclick='openPreview(event, this.href, {{ item.name | tojson }})'>{{ item.name }}</a>
+                            <a href="{{ item.preview_url }}" class="file-name">{{ item.name }}</a>
                         {% else %}
                             <a href="{{ url_for('download', path=item.path) }}" class="file-name">{{ item.name }}</a>
                         {% endif %}
@@ -474,7 +422,9 @@
                         {% if not item.is_dir %}
                             <a href="{{ url_for('download', path=item.path) }}" class="btn btn-primary">{{ i18n.download }}</a>
                         {% endif %}
-                        <button class="btn btn-danger" onclick="confirmDelete('{{ item.name }}', '{{ item.path }}', {{ 'true' if item.is_dir else 'false' }})">{{ i18n.delete }}</button>
+                        <button type="button" class="btn btn-danger delete-trigger"
+                                data-delete-name="{{ item.name }}" data-delete-path="{{ item.path }}"
+                                data-delete-is-dir="{{ 'true' if item.is_dir else 'false' }}">{{ i18n.delete }}</button>
                     </div>
                 </div>
             {% else %}
@@ -520,21 +470,6 @@
         </div>
     </div>
 
-    <!-- 隔离交互预览 -->
-    <div class="modal preview-modal" id="previewModal" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
-        <div class="modal-content">
-            <div class="preview-header">
-                <h3 id="previewTitle"></h3>
-                <div class="preview-actions">
-                    <a id="previewOpenNew" class="btn btn-primary" target="_blank" rel="noopener noreferrer">{{ i18n.preview_open_new }}</a>
-                    <button type="button" class="btn" onclick="closePreview()">{{ i18n.preview_close }}</button>
-                </div>
-            </div>
-            <iframe id="previewFrame" class="preview-frame" title="{{ i18n.preview_close }}"
-                    sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
-        </div>
-    </div>
-
     <script>
         // i18n
         const i18n = {{ i18n | tojson }};
@@ -567,17 +502,86 @@
         uploadLabel.addEventListener('drop', handleDrop, false);
 
         function handleDrop(e) {
-            uploadFiles(e.dataTransfer.files);
+            uploadDroppedItems(e.dataTransfer);
         }
 
-        function uploadFolder(input) {
-            if (!('webkitdirectory' in input)) {
-                alert(i18n.folder_upload_unsupported);
-                input.value = '';
+        function readDirectoryEntries(reader) {
+            return new Promise((resolve, reject) => {
+                const entries = [];
+
+                function readBatch() {
+                    reader.readEntries(batch => {
+                        if (!batch.length) {
+                            resolve(entries);
+                            return;
+                        }
+
+                        entries.push(...batch);
+                        readBatch();
+                    }, reject);
+                }
+
+                readBatch();
+            });
+        }
+
+        function readEntryFile(entry) {
+            return new Promise((resolve, reject) => {
+                entry.file(resolve, reject);
+            });
+        }
+
+        async function collectDroppedEntry(entry, relativePath, entries) {
+            if (entry.isFile) {
+                const file = await readEntryFile(entry);
+                entries.push({ file, relativePath });
                 return;
             }
 
-            uploadFiles(input, true);
+            if (entry.isDirectory) {
+                const childEntries = await readDirectoryEntries(entry.createReader());
+                for (const childEntry of childEntries) {
+                    await collectDroppedEntry(
+                        childEntry,
+                        relativePath + '/' + childEntry.name,
+                        entries
+                    );
+                }
+            }
+        }
+
+        async function uploadDroppedItems(dataTransfer) {
+            const items = Array.from(dataTransfer.items || []);
+            const entries = [];
+            let hasDirectory = false;
+            let usedEntryApi = false;
+
+            try {
+                for (const item of items) {
+                    if (item.kind !== 'file' || typeof item.webkitGetAsEntry !== 'function') {
+                        continue;
+                    }
+
+                    const entry = item.webkitGetAsEntry();
+                    if (!entry) {
+                        continue;
+                    }
+
+                    usedEntryApi = true;
+                    hasDirectory = hasDirectory || entry.isDirectory;
+                    await collectDroppedEntry(entry, entry.name, entries);
+                }
+            } catch (error) {
+                alert(i18n.upload_error);
+                return;
+            }
+
+            if (usedEntryApi) {
+                uploadFileEntries(entries, hasDirectory);
+                return;
+            }
+
+            uploadFiles(dataTransfer.files);
         }
 
         // 上传文件或文件夹
@@ -587,26 +591,35 @@
                 return;
             }
 
-            const form = document.getElementById('uploadForm');
-            const formData = new FormData();
-
-            for (const file of files) {
-                formData.append('files', file);
-                if (isFolder) {
-                    const relativePath = file.webkitRelativePath;
-                    if (!relativePath) {
-                        alert(i18n.folder_upload_unsupported);
-                        if ('value' in input) {
-                            input.value = '';
-                        }
-                        return;
-                    }
-                    formData.append('relative_paths', relativePath);
-                }
-            }
+            const entries = Array.from(files, file => ({
+                file,
+                relativePath: isFolder ? file.webkitRelativePath : ''
+            }));
 
             if ('value' in input) {
                 input.value = '';
+            }
+
+            uploadFileEntries(entries, isFolder);
+        }
+
+        function uploadFileEntries(entries, includeRelativePaths = false) {
+            if (!entries.length) {
+                return;
+            }
+
+            const form = document.getElementById('uploadForm');
+            const formData = new FormData();
+
+            for (const entry of entries) {
+                formData.append('files', entry.file);
+                if (includeRelativePaths) {
+                    if (!entry.relativePath) {
+                        alert(i18n.folder_upload_unsupported);
+                        return;
+                    }
+                    formData.append('relative_paths', entry.relativePath);
+                }
             }
 
             const progressBar = document.getElementById('progressBar');
@@ -650,28 +663,22 @@
             document.getElementById(id).classList.remove('active');
         }
 
-        function openPreview(event, url, name) {
-            event.preventDefault();
-
-            const modal = document.getElementById('previewModal');
-            const frame = document.getElementById('previewFrame');
-            document.getElementById('previewTitle').textContent = i18n.preview_title.replace('{name}', name);
-            document.getElementById('previewOpenNew').href = url;
-            frame.src = url;
-            modal.classList.add('active');
-        }
-
-        function closePreview() {
-            document.getElementById('previewFrame').src = 'about:blank';
-            document.getElementById('previewModal').classList.remove('active');
-        }
-
         function confirmDelete(name, path, isDir) {
             const template = isDir ? i18n.confirm_delete_folder : i18n.confirm_delete_file;
             document.getElementById('deleteMessage').textContent = template.replace('{name}', name);
             document.getElementById('deleteForm').action = '/delete/' + encodeURIComponent(path);
             document.getElementById('deleteModal').classList.add('active');
         }
+
+        document.querySelectorAll('.delete-trigger').forEach(button => {
+            button.addEventListener('click', function() {
+                confirmDelete(
+                    this.dataset.deleteName,
+                    this.dataset.deletePath,
+                    this.dataset.deleteIsDir === 'true'
+                );
+            });
+        });
 
         // 点击弹窗外部关闭
         document.querySelectorAll('.modal').forEach(modal => {
@@ -680,19 +687,14 @@
                     return;
                 }
 
-                if (this.id === 'previewModal') {
-                    closePreview();
-                } else {
-                    this.classList.remove('active');
-                }
+                this.classList.remove('active');
             });
         });
 
         // ESC关闭弹窗
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                closePreview();
-                document.querySelectorAll('.modal:not(#previewModal)').forEach(modal => {
+                document.querySelectorAll('.modal').forEach(modal => {
                     modal.classList.remove('active');
                 });
             }

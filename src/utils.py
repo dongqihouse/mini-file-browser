@@ -8,7 +8,7 @@ HTML_PREVIEW_EXTENSIONS = {'.html', '.htm'}
 TEXT_PREVIEW_EXTENSIONS = {
     '.txt', '.md', '.markdown', '.log', '.csv',
     '.json', '.xml', '.yaml', '.yml',
-    '.css', '.js', '.mjs', '.ts', '.tsx',
+    '.css', '.js', '.jsx', '.mjs', '.ts', '.tsx',
     '.py', '.sh', '.bat', '.ini', '.conf', '.env',
 }
 
@@ -75,6 +75,12 @@ def get_preview_mimetype(filename):
         return 'text/css'
     if ext in {'.js', '.mjs'}:
         return 'application/javascript'
+    if ext == '.jsx':
+        return 'text/jsx'
+    if ext == '.ts':
+        return 'text/typescript'
+    if ext == '.tsx':
+        return 'text/tsx'
     if ext == '.json':
         return 'application/json'
     if ext == '.xml':

@@ -25,13 +25,23 @@ cd mini-file-browser
 docker-compose up -d
 ```
 
-访问 http://127.0.0.1:9100
+主应用访问 http://127.0.0.1:9100，HTML 预览使用同源 `/preview/...` 路由。
+
+纯 IP 内网部署时，请将 `docker-compose.yml` 中的 `APP_BASE_URL` 改为客户端实际访问的服务器 IP 或域名（内置示例为 `10.16.10.62`），然后执行：
+
+```bash
+docker-compose up -d --build
+# 防火墙只需要允许客户端访问 TCP 9100。
+```
 
 ### 本地开发
+
+启动主应用：
 
 ```bash
 pip install -r requirements.txt
 export FILE_STORAGE_PATH=./data
+export APP_BASE_URL=http://127.0.0.1:9100
 python src/wsgi.py
 ```
 
@@ -48,19 +58,21 @@ python src/wsgi.py
 | `ALLOWED_EXTENSIONS` | 允许的扩展名（逗号分隔，留空允许全部） | 空 |
 | `SECRET_KEY` | Flask 密钥（生产环境请修改） | 内置默认值 |
 | `DEBUG` | 调试模式 | `false` |
-| `APP_BASE_URL` | 允许嵌入预览的文件浏览器源 | `http://127.0.0.1:9100` |
-| `PREVIEW_BASE_URL` | 隔离的交互式预览源 | `http://preview.localhost:9100` |
-| `PREVIEW_HOST` | 路由到只读预览应用的主机名 | 从 `PREVIEW_BASE_URL` 取得 |
+| `APP_BASE_URL` | 客户端可访问的主应用源；端口必须与 `PORT` 一致 | `http://127.0.0.1:9100` |
 
 ## 交互式 HTML 预览
 
-交互式预览运行在**独立的预览源**上。这样上传 HTML 中的内联脚本、相对 JavaScript、CSS、图片、字体、媒体以及同目录 iframe 可以运行，同时上传代码不会与文件浏览器 UI 或管理 API 同源。
+交互式预览运行在**可信同源模式**下。点击 HTML 文件会直接进入主应用的 `/preview/...` 页面，让 HTML 占满浏览器内容区，不再包裹预览弹窗、iframe、标题栏或关闭按钮；响应也不添加限制脚本、网络请求或外部资源的 CSP。
 
-默认本地配置下，请通过 `http://127.0.0.1:9100` 访问文件浏览器。点击 HTML 文件会在沙箱面板中加载 `http://preview.localhost:9100` 的内容；现代浏览器会将 `*.localhost` 解析到本机。不要把 preview hostname 作为主应用地址使用。
+同目录相对资源会继续通过预览路由加载，例如 `./app.js`、`./app.jsx`、`./styles.css`、`images/logo.png`、`./child.html`。如果 HTML 使用 Babel standalone 等运行时转换 JSX，确保对应脚本可以由浏览器访问；项目不会再用 CSP 阻止 CDN、内联脚本、XHR/fetch 或 Babel 的运行时转换。
 
-预览内容被有意限制：不能访问文件浏览器 API，不能发起 fetch/XHR/WebSocket，不能提交表单、打开弹窗、导航顶层页面、加载第三方资源，也不能访问父页面。`./app.js`、`./styles.css`、`images/logo.png`、`./child.html` 等相对资源仍然支持，但其扩展名必须在预览路由的允许范围内。
+该模式适合可信内网文件。预览 HTML 与文件浏览器同源，可以访问父页面和同源接口；请只预览你信任的 HTML。
 
-生产环境需要配置两个不同的 HTTPS 主机名（例如 `files.example.internal` 与 `preview.example-preview.internal`）并都转发到此服务，同时保留 `Host` 请求头；据此设置 `APP_BASE_URL`、`PREVIEW_BASE_URL` 和 `PREVIEW_HOST`。不要把应用 Cookie 配置为共享的 parent-domain `Domain=` Cookie，也不要让反向代理把 preview host 回退路由到主应用。
+手工生产部署时只需要启动主应用：
+
+```bash
+.venv/bin/gunicorn --bind 0.0.0.0:9100 --chdir src wsgi:application
+```
 
 ## API
 
@@ -89,7 +101,7 @@ POST /api/upload/<path>     # 上传文件到指定目录
 
 普通文件上传使用 `multipart/form-data`，文件字段名可使用 `files` 或 `file`。目标目录必须已存在，重名文件会覆盖。
 
-Web 界面支持在实现了 `webkitdirectory` 的现代浏览器中选择文件夹上传（Chromium 系浏览器和 Safari）。文件夹内的文件会保留嵌套路径和所选文件夹的根目录名；普通多文件选择和文件拖拽上传仍可用，暂不支持拖拽文件夹。浏览器只会提供文件条目，因此空文件夹不会被上传。
+Web 界面只有一个上传入口：点击入口选择普通文件上传，或将文件/文件夹拖拽到同一区域。拖拽文件夹时会自动递归读取目录内容，并保留嵌套路径和拖拽文件夹的根目录名。浏览器只会提供文件条目，因此空文件夹不会被上传。
 
 使用 API 上传文件夹时，必须使用 `files` 字段，并按相同顺序为每个文件发送一个 `relative_paths` 字段。路径必须使用 `/` 分隔，服务端会校验路径以防止目录穿越，并自动创建缺失的嵌套父目录。
 

@@ -25,13 +25,23 @@ cd mini-file-browser
 docker-compose up -d
 ```
 
-Visit http://127.0.0.1:9100
+Visit the main application at http://127.0.0.1:9100. HTML previews use the same-origin `/preview/...` route.
+
+For an IP-only intranet deployment, change `APP_BASE_URL` in `docker-compose.yml` to the server IP or hostname that clients use (the included example uses `10.16.10.62`). Then run:
+
+```bash
+docker-compose up -d --build
+# Allow client access to TCP port 9100.
+```
 
 ### Local Development
+
+Start the main application:
 
 ```bash
 pip install -r requirements.txt
 export FILE_STORAGE_PATH=./data
+export APP_BASE_URL=http://127.0.0.1:9100
 python src/wsgi.py
 ```
 
@@ -48,19 +58,21 @@ Configure via environment variables:
 | `ALLOWED_EXTENSIONS` | Allowed extensions (comma-separated, empty for all) | empty |
 | `SECRET_KEY` | Flask secret key (change in production) | built-in default |
 | `DEBUG` | Debug mode | `false` |
-| `APP_BASE_URL` | File-browser origin allowed to embed previews | `http://127.0.0.1:9100` |
-| `PREVIEW_BASE_URL` | Isolated interactive-preview origin | `http://preview.localhost:9100` |
-| `PREVIEW_HOST` | Hostname that routes to the preview-only app | Hostname from `PREVIEW_BASE_URL` |
+| `APP_BASE_URL` | Externally reachable main-application origin; its port must equal `PORT` | `http://127.0.0.1:9100` |
 
 ## Interactive HTML previews
 
-Interactive previews run from a **separate preview origin**. This lets inline and relative JavaScript, CSS, images, fonts, media, and same-preview iframe pages run without making uploaded code same-origin with the file-browser UI or management API.
+Interactive previews run in **trusted same-origin mode**. Clicking an HTML file opens the main application's `/preview/...` page directly so the HTML fills the browser content area, without a preview modal, iframe, title bar, or close button. Responses do not add a CSP that blocks scripts, network requests, or external resources.
 
-For the default local configuration, open the browser at `http://127.0.0.1:9100`. Clicking an HTML file opens it in a sandboxed panel from `http://preview.localhost:9100`; `*.localhost` resolves to the local machine in modern browsers. Do not use the preview hostname as the main application URL.
+Relative resources in the same folder continue to load through the preview route, including `./app.js`, `./app.jsx`, `./styles.css`, `images/logo.png`, and `./child.html`. If an HTML file uses Babel standalone or a similar runtime JSX transformer, make sure the runtime script is reachable by the browser; this app no longer blocks CDN scripts, inline scripts, XHR/fetch, or Babel's runtime transform.
 
-Preview content is intentionally restricted: it cannot access the file-browser API, make fetch/XHR/WebSocket connections, submit forms, open popups, navigate the top-level browser page, load third-party resources, or access the parent UI. Relative resources such as `./app.js`, `./styles.css`, `images/logo.png`, and `./child.html` remain supported when their extensions are allowed by the preview route.
+This mode is intended for trusted intranet files. Previewed HTML is same-origin with the file browser and can access the parent page and same-origin APIs; only preview HTML you trust.
 
-For production, configure two different HTTPS hostnames (for example `files.example.internal` and `preview.example-preview.internal`) to forward to this service while preserving the `Host` header. Set `APP_BASE_URL`, `PREVIEW_BASE_URL`, and `PREVIEW_HOST` accordingly. Do not configure application cookies with a shared parent-domain `Domain=` attribute, and do not route the preview host to the main application as a proxy fallback.
+For a manual production deployment, run the main application:
+
+```bash
+.venv/bin/gunicorn --bind 0.0.0.0:9100 --chdir src wsgi:application
+```
 
 ## API
 
@@ -90,7 +102,7 @@ Response example:
 Flat upload requests use `multipart/form-data`; the file field name can be `files` or `file`.
 The target directory must already exist, and existing files with the same name are overwritten.
 
-The web UI supports selecting a folder in modern browsers that implement `webkitdirectory` (Chromium-based browsers and Safari). Folder files retain their nested paths, including the selected root folder. Ordinary multi-file selection and file drag & drop remain available; directory drag & drop is not supported yet. Empty directories cannot be uploaded because browsers only provide file entries.
+The web UI has one upload entry: click it to select ordinary files, or drag files/folders onto the same area. Dropped folders are read recursively and retain nested paths, including the dropped root folder. Empty directories cannot be uploaded because browsers only provide file entries.
 
 For API folder uploads, use the `files` field and send one `relative_paths` field for every file in the same order. Paths must use `/` separators, are validated to prevent traversal, and missing nested parent directories are created automatically.
 

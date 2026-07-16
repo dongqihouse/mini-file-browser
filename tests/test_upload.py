@@ -23,7 +23,16 @@ class UploadTestCase(unittest.TestCase):
         self.storage_dir = Path(self.temp_dir.name) / 'storage'
         self.old_storage_path = os.environ.get('FILE_STORAGE_PATH')
         self.old_allowed_extensions = os.environ.get('ALLOWED_EXTENSIONS')
+        self.preview_environment = {
+            key: os.environ.get(key)
+            for key in ('APP_BASE_URL', 'PREVIEW_BASE_URL', 'PREVIEW_HOST', 'PORT', 'PREVIEW_PORT')
+        }
         os.environ['FILE_STORAGE_PATH'] = str(self.storage_dir)
+        os.environ['APP_BASE_URL'] = 'http://127.0.0.1:9100'
+        os.environ['PREVIEW_BASE_URL'] = 'http://127.0.0.1:9101'
+        os.environ['PORT'] = '9100'
+        os.environ['PREVIEW_PORT'] = '9101'
+        os.environ.pop('PREVIEW_HOST', None)
         os.environ.pop('ALLOWED_EXTENSIONS', None)
 
         if 'app' in sys.modules:
@@ -44,6 +53,12 @@ class UploadTestCase(unittest.TestCase):
             os.environ.pop('ALLOWED_EXTENSIONS', None)
         else:
             os.environ['ALLOWED_EXTENSIONS'] = self.old_allowed_extensions
+
+        for key, value in self.preview_environment.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
         self.temp_dir.cleanup()
 
@@ -81,11 +96,10 @@ class UploadTestCase(unittest.TestCase):
         self.assertEqual((self.storage_dir / '预览.html').read_bytes(), b'<h1>preview</h1>')
 
         preview_response = self.client.get('/preview/预览.html')
-        self.assertEqual(preview_response.status_code, 302)
-        self.assertEqual(
-            preview_response.headers['Location'],
-            'http://preview.localhost:9100/preview/%E9%A2%84%E8%A7%88.html'
-        )
+        self.addCleanup(preview_response.close)
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_response.mimetype, 'text/html')
+        self.assertEqual(preview_response.data, b'<h1>preview</h1>')
 
     def test_folder_upload_creates_nested_directories(self):
         response = self.post_folder_upload([
@@ -262,12 +276,18 @@ class UploadTestCase(unittest.TestCase):
         self.assertEqual(existing_file.read_bytes(), b'original')
         self.assertEqual(list(self.storage_dir.glob('.upload-*')), [])
 
-    def test_upload_page_includes_folder_picker(self):
+    def test_upload_page_uses_one_entry_with_automatic_folder_drop_support(self):
         response = self.client.get('/')
+        page = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'webkitdirectory', response.data)
-        self.assertIn(b'relative_paths', response.data)
+        self.assertEqual(page.count('class="upload-label"'), 1)
+        self.assertIn('id="fileInput"', page)
+        self.assertNotIn('id="folderInput"', page)
+        self.assertNotIn('webkitdirectory', page)
+        self.assertNotIn('upload_folder_hint', page)
+        self.assertIn('webkitGetAsEntry', page)
+        self.assertIn('relative_paths', page)
 
     def test_html_folder_upload_redirects_after_saving(self):
         data = MultiDict([

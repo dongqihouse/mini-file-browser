@@ -11,7 +11,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FILE_STORAGE_PATH=/data \
     HOST=0.0.0.0 \
-    PORT=9100
+    PORT=9100 \
+    PREVIEW_BIND_HOST=0.0.0.0 \
+    PREVIEW_PORT=9101
 
 # 安装依赖
 COPY requirements.txt .
@@ -23,8 +25,8 @@ COPY src/ .
 # 创建数据目录
 RUN mkdir -p /data
 
-# 暴露端口
-EXPOSE 9100
+# 暴露主应用和只读预览端口
+EXPOSE 9100 9101
 
 # 创建非root用户运行应用
 RUN useradd -m -u 1000 appuser && \

@@ -16,7 +16,12 @@ file-browser/
 ├── Dockerfile              # Docker 镜像配置
 ├── docker-compose.yml      # Docker Compose 配置
 ├── data/                   # 文件存储目录
+├── knowledge/              # 项目长期知识库
 ```
+
+## 知识库
+
+- `knowledge/product/features.md`: 产品功能与关键行为，包含可信同源 HTML 预览规则。
 
 ## 运行方式
 

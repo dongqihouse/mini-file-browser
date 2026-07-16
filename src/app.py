@@ -20,19 +20,28 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from i18n import TRANSLATIONS, get_lang, t
-from preview_config import get_preview_settings, get_storage_dir
-from utils import get_file_size_str, get_file_icon, is_inline_preview_file, is_previewable_file
+from preview_config import get_storage_dir
+from utils import (
+    get_file_size_str, get_file_icon, get_preview_mimetype,
+    is_inline_preview_file, is_previewable_file
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'file-browser-secret-key-change-me')
 
 # 配置
 BASE_DIR = get_storage_dir()
-PREVIEW_SETTINGS = get_preview_settings()
-PREVIEW_BASE_URL = PREVIEW_SETTINGS.preview_base_url
+PORT = int(os.environ.get('PORT', 9100))
+APP_BASE_URL = os.environ.get('APP_BASE_URL', f'http://127.0.0.1:{PORT}')
 MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_SIZE', 500 * 1024 * 1024))  # 默认500MB
 ALLOWED_EXTENSIONS = os.environ.get('ALLOWED_EXTENSIONS', '')  # 空表示允许所有
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Strict',
+    SESSION_COOKIE_SECURE=APP_BASE_URL.startswith('https://'),
+    SESSION_COOKIE_DOMAIN=None
+)
 
 # 确保存储目录存在
 BASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,8 +84,8 @@ def get_upload_target_dir(path_str):
 
 
 def get_preview_url(path):
-    """构造固定隔离源上的预览地址，不使用请求 Host。"""
-    return f"{PREVIEW_BASE_URL}{url_for('preview', path=path)}"
+    """构造同源可信预览地址。"""
+    return url_for('preview', path=path)
 
 
 def get_breadcrumbs(rel_path):
@@ -427,13 +436,18 @@ def download(path):
 
 @app.route('/preview/<path:path>')
 def preview(path):
-    """将旧的同源预览链接迁移到固定的隔离预览源。"""
+    """在主应用同源下内联预览可信文件。"""
     file_path = safe_path(path)
 
     if not file_path.exists() or file_path.is_dir() or not is_inline_preview_file(file_path.name):
         abort(404)
 
-    return redirect(get_preview_url(path))
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=file_path.name,
+        mimetype=get_preview_mimetype(file_path.name)
+    )
 
 
 @app.route('/upload/', methods=['POST'])
@@ -608,16 +622,12 @@ def api_files(path=''):
 
 
 if __name__ == '__main__':
-    from wsgi import application
-    from werkzeug.serving import run_simple
-
     host = os.environ.get('HOST', '0.0.0.0')
-    port = int(os.environ.get('PORT', 9100))
     debug = os.environ.get('DEBUG', 'false').lower() == 'true'
 
-    print("📂 File Browser 启动中...")
-    print(f"🌐 主应用: {PREVIEW_SETTINGS.app_base_url}")
-    print(f"🪟 隔离预览: {PREVIEW_BASE_URL}")
+    print("📂 File Browser 主应用启动中...")
+    print(f"🌐 主应用: {APP_BASE_URL}")
+    print("🪟 HTML 预览: 同源可信模式")
     print(f"📁 存储目录: {BASE_DIR}")
 
-    run_simple(host, port, application, use_debugger=debug, use_reloader=debug)
+    app.run(host=host, port=PORT, debug=debug)
