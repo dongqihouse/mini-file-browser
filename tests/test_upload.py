@@ -276,16 +276,17 @@ class UploadTestCase(unittest.TestCase):
         self.assertEqual(existing_file.read_bytes(), b'original')
         self.assertEqual(list(self.storage_dir.glob('.upload-*')), [])
 
-    def test_upload_page_uses_one_entry_with_automatic_folder_drop_support(self):
+    def test_upload_page_shows_file_and_folder_buttons_side_by_side(self):
         response = self.client.get('/')
         page = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(page.count('class="upload-label"'), 1)
+        self.assertEqual(page.count('class="upload-label"'), 2)
+        self.assertIn('class="upload-actions" id="uploadDropZone"', page)
         self.assertIn('id="fileInput"', page)
-        self.assertNotIn('id="folderInput"', page)
-        self.assertNotIn('webkitdirectory', page)
-        self.assertNotIn('upload_folder_hint', page)
+        self.assertIn('id="folderInput"', page)
+        self.assertIn('webkitdirectory', page)
+        self.assertIn('upload_folder_hint', page)
         self.assertIn('webkitGetAsEntry', page)
         self.assertIn('relative_paths', page)
 

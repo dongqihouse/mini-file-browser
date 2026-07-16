@@ -146,8 +146,17 @@
             display: none;
         }
 
+        .upload-actions {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+        }
+
         .upload-label {
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
             padding: 15px;
             border: 2px dashed #bdc3c7;
             border-radius: 8px;
@@ -341,6 +350,10 @@
             .file-actions {
                 flex-direction: column;
             }
+
+            .upload-actions {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
@@ -381,10 +394,16 @@
             <button class="btn btn-primary" onclick="showNewFolderModal()">📁 {{ i18n.new_folder_btn }}</button>
 
             <form id="uploadForm" action="{{ url_for('upload', path=current_path) }}" method="post" enctype="multipart/form-data" class="upload-area">
-                <label class="upload-label" id="uploadLabel">
-                    <input type="file" name="files" id="fileInput" multiple onchange="uploadFiles(this)">
-                    📤 {{ i18n.upload_hint }}
-                </label>
+                <div class="upload-actions" id="uploadDropZone">
+                    <label class="upload-label">
+                        <input type="file" name="files" id="fileInput" multiple onchange="uploadFiles(this)">
+                        📤 {{ i18n.upload_hint }}
+                    </label>
+                    <label class="upload-label">
+                        <input type="file" name="files" id="folderInput" multiple webkitdirectory directory onchange="uploadFiles(this, true)">
+                        📁 {{ i18n.upload_folder_hint }}
+                    </label>
+                </div>
                 <div class="progress-bar" id="progressBar">
                     <div class="progress" id="progress"></div>
                 </div>
@@ -480,10 +499,11 @@
         }
 
         // 拖拽上传
-        const uploadLabel = document.getElementById('uploadLabel');
+        const uploadDropZone = document.getElementById('uploadDropZone');
+        const uploadLabels = document.querySelectorAll('.upload-label');
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            uploadLabel.addEventListener(eventName, preventDefaults, false);
+            uploadDropZone.addEventListener(eventName, preventDefaults, false);
         });
 
         function preventDefaults(e) {
@@ -491,15 +511,19 @@
             e.stopPropagation();
         }
 
+        function setUploadDragState(isActive) {
+            uploadLabels.forEach(label => label.classList.toggle('dragover', isActive));
+        }
+
         ['dragenter', 'dragover'].forEach(eventName => {
-            uploadLabel.addEventListener(eventName, () => uploadLabel.classList.add('dragover'), false);
+            uploadDropZone.addEventListener(eventName, () => setUploadDragState(true), false);
         });
 
         ['dragleave', 'drop'].forEach(eventName => {
-            uploadLabel.addEventListener(eventName, () => uploadLabel.classList.remove('dragover'), false);
+            uploadDropZone.addEventListener(eventName, () => setUploadDragState(false), false);
         });
 
-        uploadLabel.addEventListener('drop', handleDrop, false);
+        uploadDropZone.addEventListener('drop', handleDrop, false);
 
         function handleDrop(e) {
             uploadDroppedItems(e.dataTransfer);

@@ -102,7 +102,7 @@ Response example:
 Flat upload requests use `multipart/form-data`; the file field name can be `files` or `file`.
 The target directory must already exist, and existing files with the same name are overwritten.
 
-The web UI has one upload entry: click it to select ordinary files, or drag files/folders onto the same area. Dropped folders are read recursively and retain nested paths, including the dropped root folder. Empty directories cannot be uploaded because browsers only provide file entries.
+The web UI shows two side-by-side buttons for uploading files and uploading a folder, and files/folders can also be dropped onto the button area. Dropped folders are read recursively and retain nested paths, including the dropped root folder. Empty directories cannot be uploaded because browsers only provide file entries.
 
 For API folder uploads, use the `files` field and send one `relative_paths` field for every file in the same order. Paths must use `/` separators, are validated to prevent traversal, and missing nested parent directories are created automatically.
 
