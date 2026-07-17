@@ -438,9 +438,7 @@
                         </div>
                     </div>
                     <div class="file-actions">
-                        {% if not item.is_dir %}
-                            <a href="{{ url_for('download', path=item.path) }}" class="btn btn-primary">{{ i18n.download }}</a>
-                        {% endif %}
+                        <a href="{{ url_for('download', path=item.path) }}" class="btn btn-primary">{{ i18n.download_folder if item.is_dir else i18n.download }}</a>
                         <button type="button" class="btn btn-danger delete-trigger"
                                 data-delete-name="{{ item.name }}" data-delete-path="{{ item.path }}"
                                 data-delete-is-dir="{{ 'true' if item.is_dir else 'false' }}">{{ i18n.delete }}</button>

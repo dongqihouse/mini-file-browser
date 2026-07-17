@@ -9,6 +9,8 @@ import os
 import secrets
 import shutil
 import stat
+import tempfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +83,58 @@ def get_upload_target_dir(path_str):
         return None
 
     return target_dir
+
+
+def get_download_target(path_str):
+    """解析下载目标；无效路径不会回退到存储根目录。"""
+    if not path_str:
+        return None
+
+    clean_path = Path(path_str).as_posix().lstrip('/')
+    if clean_path in ('', '.'):
+        return None
+
+    target_path = (BASE_DIR / clean_path).resolve()
+    try:
+        target_path.relative_to(BASE_DIR)
+    except ValueError:
+        return None
+
+    return target_path
+
+
+def create_directory_archive(directory):
+    """将目录内容写入 ZIP，并排除符号链接以避免越过存储目录。"""
+    archive_file = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode='w+b')
+
+    try:
+        with zipfile.ZipFile(archive_file, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(f'{directory.name}/', b'')
+
+            for root, directories, files in os.walk(directory, followlinks=False):
+                root_path = Path(root)
+                archive_root = Path(directory.name) / root_path.relative_to(directory)
+
+                for name in directories[:]:
+                    child_directory = root_path / name
+                    if child_directory.is_symlink():
+                        directories.remove(name)
+                        continue
+
+                    archive.writestr(f'{(archive_root / name).as_posix()}/', b'')
+
+                for name in files:
+                    source_file = root_path / name
+                    if source_file.is_symlink() or not source_file.is_file():
+                        continue
+
+                    archive.write(source_file, (archive_root / name).as_posix())
+
+        archive_file.seek(0)
+        return archive_file
+    except Exception:
+        archive_file.close()
+        raise
 
 
 def get_preview_url(path):
@@ -418,14 +472,22 @@ def browse(path=''):
 
 @app.route('/download/<path:path>')
 def download(path):
-    """下载文件"""
-    file_path = safe_path(path)
+    """下载文件，或将目录打包为 ZIP 下载。"""
+    file_path = get_download_target(path)
 
-    if not file_path.exists():
+    if file_path is None or not file_path.exists():
         abort(404)
 
     if file_path.is_dir():
-        return redirect(url_for('browse', path=path))
+        archive_file = create_directory_archive(file_path)
+        response = send_file(
+            archive_file,
+            as_attachment=True,
+            download_name=f'{file_path.name}.zip',
+            mimetype='application/zip'
+        )
+        response.call_on_close(archive_file.close)
+        return response
 
     return send_file(
         file_path,

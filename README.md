@@ -8,7 +8,7 @@ A lightweight file browser for internal networks, built with Python3 + Flask. Su
 
 - **File Browsing** - Directory navigation, breadcrumb path, file type icons
 - **File Upload** - Multi-file and folder uploads, drag & drop, progress bar
-- **File Preview/Download** - Preview interactive HTML and text files, download other files
+- **File Preview/Download** - Preview interactive HTML and text files, download files or folders (as ZIP)
 - **Directory Management** - Create folders, delete files/folders
 - **Security** - Path traversal protection, extension restriction, non-root user
 - **Responsive UI** - Desktop and mobile friendly
@@ -67,6 +67,10 @@ Interactive previews run in **trusted same-origin mode**. Clicking an HTML file 
 Relative resources in the same folder continue to load through the preview route, including `./app.js`, `./app.jsx`, `./styles.css`, `images/logo.png`, and `./child.html`. If an HTML file uses Babel standalone or a similar runtime JSX transformer, make sure the runtime script is reachable by the browser; this app no longer blocks CDN scripts, inline scripts, XHR/fetch, or Babel's runtime transform.
 
 This mode is intended for trusted intranet files. Previewed HTML is same-origin with the file browser and can access the parent page and same-origin APIs; only preview HTML you trust.
+
+## Downloads
+
+Use the download button on a folder to receive a ZIP archive containing the folder itself, its nested files, and empty subfolders. Symbolic links are excluded, so an archive cannot include content outside the configured storage directory.
 
 For a manual production deployment, run the main application:
 
